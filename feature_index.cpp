@@ -29,6 +29,7 @@ template <class T> static inline void read_static(const char **ptr,
 void make_templs(const std::vector<std::string> unigram_templs,
                  const std::vector<std::string> bigram_templs,
                  std::string *templs) {
+    // 把所有的模板规则字符串合并进一个字符串里面
   templs->clear();
   for (size_t i = 0; i < unigram_templs.size(); ++i) {
     templs->append(unigram_templs[i]);
@@ -38,23 +39,27 @@ void make_templs(const std::vector<std::string> unigram_templs,
     templs->append(bigram_templs[i]);
     templs->append("\n");
   }
+  // std::cout << templs << std::endl;
+
 }
 }  // namespace
 
-char *Allocator::strdup(const char *p) {
+char *Allocator::strdup(const char *p) {  // 拷贝一个新的字符串
   const size_t len = std::strlen(p);
   char *q = char_freelist_->alloc(len + 1);
   std::strcpy(q, p);
   return q;
 }
 
-Allocator::Allocator(size_t thread_num)
+// 重写这个类的构造函数
+Allocator::Allocator(size_t thread_num)  // 负责各种内存管理
     : thread_num_(thread_num),
       feature_cache_(new FeatureCache),
       char_freelist_(new FreeList<char>(8192)) {
   init();
 }
 
+// 重写这个类的构造函数
 Allocator::Allocator()
     : thread_num_(1),
       feature_cache_(new FeatureCache),
@@ -103,23 +108,29 @@ void Allocator::init() {
   }
 }
 
+// 解码阶段使用
 int DecoderFeatureIndex::getID(const char *key) const {
   return da_.exactMatchSearch<Darts::DoubleArray::result_type>(key);
 }
 
+// 编码阶段使用
 int EncoderFeatureIndex::getID(const char *key) const {
+			// 把特征函数插入特征字典容器中
   std::map <std::string, std::pair<int, unsigned int> >::iterator
-      it = dic_.find(key);
-  if (it == dic_.end()) {
+      it = dic_.find(key);  // 查找改特征函数在字典中的索引位置
+  if (it == dic_.end()) {  // 如果不在，初始化插入，特征使用次数设置为1
     dic_.insert(std::make_pair
                 (std::string(key),
                  std::make_pair(maxid_, static_cast<unsigned int>(1))));
     const int n = maxid_;
+	  // maxid_用来分段计数，作为base 5,5+1, 5+2...
+	  // 为什么它能折磨写，就是因为，他知道：这些特征模板都会作用一遍，所以如果你是U类模板，那本次就有
+	  // y_.size 个，如果是B类模板，那就有y_.size * y_.size个
     maxid_ += (key[0] == 'U' ? y_.size() : y_.size() * y_.size());
     return n;
-  } else {
-    it->second.second++;
-    return it->second.first;
+  } else { // 如果特征函数已经在字典中存在
+    it->second.second++;  // 使用次数+1
+    return it->second.first; // 特征索引ID   base + 1
   }
   return -1;
 }
@@ -127,18 +138,22 @@ int EncoderFeatureIndex::getID(const char *key) const {
 bool EncoderFeatureIndex::open(const char *template_filename,
                                const char *train_filename) {
   check_max_xsize_ = true;
+    // 逐行解析  模板文件    训练文件
   return openTemplate(template_filename) && openTagSet(train_filename);
 }
 
 bool EncoderFeatureIndex::openTemplate(const char *filename) {
-  std::ifstream ifs(WPATH(filename));
+    // 打开模板文件，并解析
+  std::ifstream ifs(WPATH(filename));  // 打开文件句柄
   CHECK_FALSE(ifs) << "open failed: "  << filename;
 
   std::string line;
-  while (std::getline(ifs, line)) {
-    if (!line[0] || line[0] == '#') {
+  while (std::getline(ifs, line)) { // 逐行读取
+	std::cout << "本行模板：" << line << std::endl;
+    if (!line[0] || line[0] == '#') {  // 如果本行是# Unigram 这种说明，就跳过
       continue;
     }
+      // 看到了吗？这里只支持两种类型的模板规则
     if (line[0] == 'U') {
       unigram_templs_.push_back(line);
     } else if (line[0] == 'B') {
@@ -147,28 +162,35 @@ bool EncoderFeatureIndex::openTemplate(const char *filename) {
       CHECK_FALSE(true) << "unknown type: " << line << " " << filename;
     }
   }
-
+	// 把所有的模板规则字符串合并进一个字符串里面
   make_templs(unigram_templs_, bigram_templs_, &templs_);
+	std::cout << "全部模板字符串：" << templs_  << "结束" << std::endl;
+
 
   return true;
 }
 
 bool EncoderFeatureIndex::openTagSet(const char *filename) {
-  std::ifstream ifs(WPATH(filename));
+    // 读取并解析训练文件
+  std::ifstream ifs(WPATH(filename));  // 创建文件句柄
   CHECK_FALSE(ifs) << "no such file or directory: " << filename;
 
-  scoped_fixed_array<char, 8192> line;
+  scoped_fixed_array<char, 8192> line; // 一个数组
   scoped_fixed_array<char *, 1024> column;
   size_t max_size = 0;
-  std::set<std::string> candset;
+  std::set<std::string> candset;  // 这是一个集合是，用来收集所有的训练集中的状态值： BMES等
 
+	// 从句柄ifs中， 逐次读取一行line.size()的这么长的字符串，然后写到line.get()这个buffer中，
   while (ifs.getline(line.get(), line.size())) {
+      // 逐行读取并解析训练文件
     if (line[0] == '\0' || line[0] == ' ' || line[0] == '\t') {
       continue;
     }
     const size_t size = tokenize2(line.get(), "\t ",
                                   column.get(), column.size());
-    if (max_size == 0) {
+
+	  // 检查每一行训练文件的列数，如果不一致，就报错
+	  if (max_size == 0) {
       max_size = size;
     }
     CHECK_FALSE(max_size == size)
@@ -178,9 +200,11 @@ bool EncoderFeatureIndex::openTagSet(const char *filename) {
     candset.insert(column[max_size-1]);
   }
 
+
   y_.clear();
   for (std::set<std::string>::iterator it = candset.begin();
        it != candset.end(); ++it) {
+	  // std::cout <<"!!!" <<  *it << std::endl;
     y_.push_back(*it);
   }
 
@@ -252,7 +276,8 @@ bool DecoderFeatureIndex::openFromArray(const char *ptr, size_t size) {
 }
 
 void EncoderFeatureIndex::shrink(size_t freq, Allocator *allocator) {
-  if (freq <= 1) {
+	// 检查特征函数字典，如果字典中的某个特征函数使用频次< 指定值freq ， 就删除这个特征函数
+  if (freq <= 1) { // 频率<=1 直接崩溃退出
     return;
   }
 
@@ -263,13 +288,15 @@ void EncoderFeatureIndex::shrink(size_t freq, Allocator *allocator) {
            it = dic_.begin(); it != dic_.end();) {
     const std::string &key = it->first;
 
-    if (it->second.second >= freq) {
+    if (it->second.second >= freq) {  // 如果这个特征函数的出现频次 >= freq
+	    // 保留这个特征函数
       old2new.insert(std::make_pair(it->second.first, new_maxid));
       it->second.first = new_maxid;
       new_maxid += (key[0] == 'U' ? y_.size() : y_.size() * y_.size());
       ++it;
     } else {
-      dic_.erase(it++);
+	    // 删除这个特征函数
+      dic_.erase(it++);  // 从特征字典中删除 这个特征函数项
     }
   }
 
@@ -505,12 +532,24 @@ const char *FeatureIndex::getTemplate() const {
 }
 
 void FeatureIndex::calcCost(Node *n) const {
-  n->cost = 0.0;
+	// 计算 状态特征函数(点)  的代价
+  n->cost = 0.0;  // 代价清零
 
+
+	// 计算 cost_factor_*∑(w*f)
 #define ADD_COST(T, A)                                                  \
   do { T c = 0;                                                               \
     for (const int *f = n->fvector; *f != -1; ++f) { c += (A)[*f + n->y];  }  \
     n->cost =cost_factor_ *(T)c; } while (0)
+	// 解释：
+	// f: 改字的特征函数集合(不完整特征)的数组头部
+	// n->y: 这个节点的输出状态值（是index值），所以这里可以*f + n->y 这样相加来进行偏移
+	// A: alpha_:这是真正特征函数的权值向量:
+	// !!一定要知道真正的特征函数个数 = 不完整特征个数 * len(状态)!!
+
+	// c += (A)[*f + n->y] 你一定很好奇：这里看起来不像  w(权重)*f(特征函数)啊!!
+	// 其实(A)[*f + n->y]仅仅是权重w, 但是因为f,要么是0,要么是1，所以这个作者直接就合并在了
+	// 权重w上.
 
   if (alpha_float_) {
     ADD_COST(float,  alpha_float_);
@@ -521,8 +560,10 @@ void FeatureIndex::calcCost(Node *n) const {
 }
 
 void FeatureIndex::calcCost(Path *p) const {
+	// 计算 转移特征函数(边) 的代价
   p->cost = 0.0;
 
+	// cost_factor_*∑(w*f)
 #define ADD_COST(T, A)                                          \
   { T c = 0.0;                                                  \
     for (const int *f = p->fvector; *f != -1; ++f) {            \
@@ -530,6 +571,8 @@ void FeatureIndex::calcCost(Path *p) const {
     }                                                           \
     p->cost =cost_factor_*(T)c; }
 
+	// 解释：(A)[*f + p->lnode->y * y_.size() + p->rnode->y] 代表这个边的权重
+	// *f + p->lnode->y * y_.size() + p->rnode->y  代表这个边的权重所在的index
   if (alpha_float_) {
     ADD_COST(float,  alpha_float_);
   } else {

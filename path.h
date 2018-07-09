@@ -15,10 +15,11 @@ namespace CRFPP {
 struct Node;
 
 struct Path {
-  Node      *rnode;
-  Node      *lnode;
-  const int *fvector;
-  double     cost;
+  Node      *rnode;  // 边的右连接点
+  Node      *lnode;  // 边的左连接点
+  const int *fvector; // 把这个cur(x轴) 对应的字特征函数集，绑定到这个边上，方便使用
+  double     cost;  // 计算边的代价 cost_factor_*∑(w*f)
+
 
   Path() : rnode(0), lnode(0), fvector(0), cost(0.0) {}
 

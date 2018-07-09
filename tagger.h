@@ -53,7 +53,8 @@ class ModelImpl : public Model {
   scoped_ptr<DecoderFeatureIndex> feature_index_;
 };
 
-class TaggerImpl : public Tagger {
+class TaggerImpl : public Tagger {  // 这是算法核心单元
+		// 为train.data中的每个句子创建一个
  public:
   explicit TaggerImpl() : mode_(TEST), vlevel_(0), nbest_(0),
                           ysize_(0), Z_(0), feature_id_(0),
@@ -70,7 +71,10 @@ class TaggerImpl : public Tagger {
   void   set_thread_id(unsigned short id) { thread_id_ = id; }
   unsigned short thread_id() const { return thread_id_; }
   Node  *node(size_t i, size_t j) const { return node_[i][j]; }
-  void   set_node(Node *n, size_t i, size_t j) { node_[i][j] = n; }
+
+	// 构建一句话的网络拓扑图
+	void   set_node(Node *n, size_t i, size_t j) { node_[i][j] = n; }
+
 
   // for LEARN mode
   bool         open(FeatureIndex *feature_index, Allocator *allocator);
@@ -201,18 +205,19 @@ class TaggerImpl : public Tagger {
   unsigned int    mode_ ;
   unsigned int    vlevel_;
   unsigned int    nbest_;
-  size_t          ysize_;
-  double          cost_;
-  double          Z_;
-  size_t          feature_id_;
-  unsigned short  thread_id_;
-  FeatureIndex   *feature_index_;
-  Allocator      *allocator_;
-  std::vector<std::vector <const char *> > x_;
-  std::vector<std::vector <Node *> > node_;
-  std::vector<std::vector<double> > penalty_;
-  std::vector<unsigned short int>  answer_;
-  std::vector<unsigned short int>  result_;
+  size_t          ysize_;  // len(状态集合)
+  double          cost_;  // 目前的训练cost，我们的目标就是降低它
+  double          Z_;  // 书中写的 p(y|x) 的分母(Z(X)这个归一化项)
+  size_t          feature_id_;  // 当前对应的feature id
+  unsigned short  thread_id_;  // 所属的线程ID
+  FeatureIndex   *feature_index_;  // 引用的是哪个FeatureIndex
+  Allocator      *allocator_;  // 引用的内存管理单元
+  std::vector<std::vector <const char *> > x_;  // 一句话(训练文件中)的解析结果
+		// [[the, DT, B], [we, DT, N],....]  // 注意是一句话哈哈哈
+  std::vector<std::vector <Node *> > node_;  // 一句话的网络拓扑矩阵(存的是节点的指针)
+  std::vector<std::vector<double> > penalty_;  // 惩罚： 每个节点的人工罚项(代价)
+  std::vector<unsigned short int>  answer_; // 训练数据的真实标签序列
+  std::vector<unsigned short int>  result_;  // 模型对训练数据用viterbi预测的结果序列
   whatlog       what_;
   string_buffer os_;
 

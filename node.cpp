@@ -13,6 +13,7 @@
 namespace CRFPP {
 
 void Node::calcAlpha() {
+  // 计算 Alpha
   alpha = 0.0;
   for (const_Path_iterator it = lpath.begin(); it != lpath.end(); ++it) {
     alpha = logsumexp(alpha,
@@ -33,12 +34,16 @@ void Node::calcBeta() {
 }
 
 void Node::calcExpectation(double *expected, double Z, size_t size) const {
+  // 计算期望
   const double c = std::exp(alpha + beta - cost - Z);
+  // 计算点的期望 p(Y_i=y_i | x)
   for (const int *f = fvector; *f != -1; ++f) {
     expected[*f + y] += c;
   }
+  // 计算边的期望p(Y_i-1 = y_i-1 ,Y_i=y_i | x)
   for (const_Path_iterator it = lpath.begin(); it != lpath.end(); ++it) {
     (*it)->calcExpectation(expected, Z, size);
   }
+  // 根据公式：最后形成 P(Y|X)
 }
 }

@@ -19,9 +19,9 @@ void Path::calcExpectation(double *expected, double Z, size_t size) const {
 }
 
 void Path::add(Node *_lnode, Node *_rnode) {
-  lnode = _lnode;
-  rnode = _rnode;
-  lnode->rpath.push_back(this);
-  rnode->lpath.push_back(this);
+  lnode = _lnode;  // 设置边的 左连接点
+  rnode = _rnode;  // 设置边的 右连接点
+  lnode->rpath.push_back(this);  // 设置 左连接点 的 右连接边
+  rnode->lpath.push_back(this);  // 设置 右连接点 的 左连接边
 }
 }

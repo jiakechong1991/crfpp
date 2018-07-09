@@ -35,20 +35,22 @@ inline double logsumexp(double x, double y, bool flg) {
 struct Path;
 
 struct Node {
-  unsigned int         x;
-  unsigned short int   y;
-  double               alpha;
-  double               beta;
-  double               cost;
+  unsigned int         x;  //在输入序列的哪个index (比如时刻t的概念)
+  unsigned short int   y;  // 这个节点的输出状态值
+  double               alpha;  // 节点的alpha 参数
+  double               beta;  // 节点的 beta 参数
+  double               cost;  // 点的代价: cost_factor_*∑(w*f)
   double               bestCost;
   Node                *prev;
   const int           *fvector;
-  std::vector<Path *>  lpath;
-  std::vector<Path *>  rpath;
+  std::vector<Path *>  lpath;  // 这个node的右边 连接边
+  std::vector<Path *>  rpath;  // 这个node的左边 连接边
 
   void calcAlpha();
   void calcBeta();
-  void calcExpectation(double *expected, double, size_t) const;
+
+	// 计算期望
+	void calcExpectation(double *expected, double, size_t) const;
 
   void clear() {
     x = y = 0;

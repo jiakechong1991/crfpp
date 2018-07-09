@@ -67,23 +67,26 @@ bool toLower(std::string *s) {  // 大写转小写
 }
 }
 
-class CRFEncoderThread: public thread {
+class CRFEncoderThread: public thread { // 一个个的线程计算单元
  public:
-  TaggerImpl **x;
-  unsigned short start_i;
-  unsigned short thread_num;
-  int zeroone;
-  int err;
-  size_t size;
-  double obj;
-  std::vector<double> expected;
+  TaggerImpl **x; // 把线程的任务队列指向：  把tagger vector 的起点
+		// 虽然，每个线程都指向的是总的tagger 列表，但是后面他们会抽样从里面执行
+  unsigned short start_i;  // 本线程的线程号
+  unsigned short thread_num;  // 所有的线程数
+  int zeroone;  // 如果对本线程的某个句子预测错误，就+1
+  int err;  // 本线程上，分配了一些句子，每个句子又是由一些行组成，这个err反应对这些行的预测错误个数
+  size_t size;  // 总的tagger 数量
+  double obj;  // 目标值  -log(y|x)
+  std::vector<double> expected;  // 长度=len(特征字典)  据说是梯度？
 
   void run() {
     obj = 0.0;
     err = zeroone = 0;
-    std::fill(expected.begin(), expected.end(), 0.0);
+    std::fill(expected.begin(), expected.end(), 0.0);  // 全部填充0
     for (size_t i = start_i; i < size; i += thread_num) {
-      obj += x[i]->gradient(&expected[0]);
+	    // 作者很喜欢使用这种 base+offset的编程模式哈：就相当远一排子弹，然后左轮枪旋转着消费一样
+	    // 这里的i 就是本线程拿到的tagger
+      obj += x[i]->gradient(&expected[0]);  // 对该tagger计算梯度
       int error_num = x[i]->eval();
       err += error_num;
       if (error_num) {
@@ -194,7 +197,7 @@ bool runMIRA(const std::vector<TaggerImpl* > &x,
 
 bool runCRF(const std::vector<TaggerImpl* > &x,
             EncoderFeatureIndex *feature_index,
-            double *alpha,
+            double *alpha, // 特征函数的权重参数列表
             size_t maxitr,
             float C,
             double eta,
@@ -204,28 +207,32 @@ bool runCRF(const std::vector<TaggerImpl* > &x,
   double old_obj = 1e+37;
   int    converge = 0;
   LBFGS lbfgs;
-  std::vector<CRFEncoderThread> thread(thread_num);
 
+	// 创建线程池
+	std::vector<CRFEncoderThread> thread(thread_num);
   for (size_t i = 0; i < thread_num; i++) {
-    thread[i].start_i = i;
-    thread[i].size = x.size();
+    thread[i].start_i = i; // 本线程的线程号
+    thread[i].size = x.size();  // 总的tagger 数量
     thread[i].thread_num = thread_num;
-    thread[i].x = const_cast<TaggerImpl **>(&x[0]);
+	  //把线程的任务队列指向：  把tagger vector 的起点
+	  thread[i].x = const_cast<TaggerImpl **>(&x[0]);
     thread[i].expected.resize(feature_index->size());
   }
 
-  size_t all = 0;
+  size_t all = 0;  // 全部的训练文件的解析结果数
   for (size_t i = 0; i < x.size(); ++i) {
+	  //x[i]->size()=> 每个tagger 的 训练解析结果数：len（[[the, DT, B], [we, DT, N],.. ..]）
     all += x[i]->size();
   }
 
-  for (size_t itr = 0; itr < maxitr; ++itr) {
+  for (size_t itr = 0; itr < maxitr; ++itr) { // 在最大迭代次数下进行这些计算
+
     for (size_t i = 0; i < thread_num; ++i) {
-      thread[i].start();
+      thread[i].start();  // 分别启动每个线程的run方法
     }
 
     for (size_t i = 0; i < thread_num; ++i) {
-      thread[i].join();
+      thread[i].join();  // 等待这些线程结束
     }
 
     for (size_t i = 1; i < thread_num; ++i) {
@@ -248,8 +255,9 @@ bool runCRF(const std::vector<TaggerImpl* > &x,
           ++num_nonzero;
         }
       }
-    } else {
+    } else {  // L2
       num_nonzero = feature_index->size();
+      // 请看L2 损失的公式
       for (size_t k = 0; k < feature_index->size(); ++k) {
         thread[0].obj += (alpha[k] * alpha[k] /(2.0 * C));
         thread[0].expected[k] += alpha[k] / C;
@@ -258,7 +266,7 @@ bool runCRF(const std::vector<TaggerImpl* > &x,
 
     double diff = (itr == 0 ? 1.0 :
                    std::abs(old_obj - thread[0].obj)/old_obj);
-    std::cout << "iter="  << itr
+    std::cout << "iter="  << itr  // 当前的迭代次数
               << " terr=" << 1.0 * thread[0].err / all
               << " serr=" << 1.0 * thread[0].zeroone / x.size()
               << " act=" << num_nonzero
@@ -275,10 +283,11 @@ bool runCRF(const std::vector<TaggerImpl* > &x,
     if (itr > maxitr || converge == 3) {
       break;  // 3 is ad-hoc
     }
-
-    if (lbfgs.optimize(feature_index->size(),
+    // 现在有了： 损失函数f(w)和梯度函数表示 ∂f(w)/∂w=g(w)
+    // 直接调用拟牛顿法求这个函数的极小值，来计算这些参数,然后保存在alpha列表里面
+    if (lbfgs.optimize(feature_index->size(),  // 最大特征数，就是变量数
                        &alpha[0],
-                       thread[0].obj,
+                       thread[0].obj, //
                        &thread[0].expected[0], orthant, C) <= 0) {
       return false;
     }
@@ -296,19 +305,20 @@ bool Encoder::convert(const char* textfilename,
   return true;
 }
 
-bool Encoder::learn(const char *templfile,
-                    const char *trainfile,
-                    const char *modelfile,
+bool Encoder::learn(const char *templfile, // 模板文件
+                    const char *trainfile,  // 训练文件
+                    const char *modelfile,  // 模型文件
                     bool textmodelfile,
-                    size_t maxitr,
-                    size_t freq,
-                    double eta,
-                    double C,
-                    unsigned short thread_num,
+                    size_t maxitr, // 最大迭代次数
+                    size_t freq, // 最低词频
+                    double eta,  // 迭代的收敛标准:参数变化太小就收敛  y2-y1 < etc
+                    double C,  // 压缩模型吗？
+                    unsigned short thread_num, // 线程数
                     unsigned short shrinking_size,
                     int algorithm) {
-  std::cout << COPYRIGHT << std::endl;
+  std::cout << COPYRIGHT << std::endl;    // 版权字符串
 
+	// 参数检查
   CHECK_FALSE(eta > 0.0) << "eta must be > 0.0";
   CHECK_FALSE(C >= 0.0) << "C must be >= 0.0";
   CHECK_FALSE(shrinking_size >= 1) << "shrinking-size must be >= 1";
@@ -324,13 +334,15 @@ bool Encoder::learn(const char *templfile,
               << std::endl;
   }
 
-  EncoderFeatureIndex feature_index;
-  Allocator allocator(thread_num);
-  std::vector<TaggerImpl* > x;
+  EncoderFeatureIndex feature_index;  // 这应该是模板解析类
+  Allocator allocator(thread_num);  // 创建内存管理器
+  std::vector<TaggerImpl* > x;  // 句子处理器 列表
+	// train.data中的是每行一个字，然后一句话需要多行。 连接拼在一起，然后用空格分隔每个句子
 
   std::cout.setf(std::ios::fixed, std::ios::floatfield);
-  std::cout.precision(5);
+  std::cout.precision(5);  // 设置数值显示精度
 
+	// 确保 清空x
 #define WHAT_ERROR(msg) do {                                    \
     for (std::vector<TaggerImpl *>::iterator it = x.begin();    \
          it != x.end(); ++it)                                   \
@@ -338,34 +350,36 @@ bool Encoder::learn(const char *templfile,
     std::cerr << msg << std::endl;                              \
     return false; } while (0)
 
+	// 解析模板文件  读取训练文件的 状态标记 集合
   CHECK_FALSE(feature_index.open(templfile, trainfile))
       << feature_index.what();
 
   {
     progress_timer pg;
 
+	  // 拿到文件句柄
     std::ifstream ifs(WPATH(trainfile));
     CHECK_FALSE(ifs) << "cannot open: " << trainfile;
 
     std::cout << "reading training data: " << std::flush;
     size_t line = 0;
-    while (ifs) {
-      TaggerImpl *_x = new TaggerImpl();
-      _x->open(&feature_index, &allocator);
+    while (ifs) {  // 当句柄可用(它是会偏移的，每次从上次读取到的地方开始读)
+      TaggerImpl *_x = new TaggerImpl();  // 为train.data中的每个句子创建一个
+      _x->open(&feature_index, &allocator); // 配置引用
+      // 逐行读取 训练文本， 然后匹配模板，形成大量的特征函数，并维护到特征函数字典中
       if (!_x->read(&ifs) || !_x->shrink()) {
         WHAT_ERROR(_x->what());
       }
-
-      if (!_x->empty()) {
-        x.push_back(_x);
+      if (!_x->empty()) {  // 如果尚未计算其  特征函数对应的权重list
+        x.push_back(_x);   // 插入
       } else {
-        delete _x;
+        delete _x;  // 计算过，就丢弃
         continue;
       }
 
-      _x->set_thread_id(line % thread_num);
+      _x->set_thread_id(line % thread_num);  // 为这个句子处理器trager 分配线程号
 
-      if (++line % 100 == 0) {
+      if (++line % 100 == 0) {  // 每100行打印一个进度条
         std::cout << line << ".. " << std::flush;
       }
     }
@@ -373,12 +387,14 @@ bool Encoder::learn(const char *templfile,
     ifs.close();
     std::cout << "\nDone!";
   }
+	// 数据准备工作结束0_0
 
+	// 从特征函数字典中删除那些 出现频次 < freq 的特征函数
   feature_index.shrink(freq, &allocator);
 
-  std::vector <double> alpha(feature_index.size());           // parameter
+  std::vector <double> alpha(feature_index.size());  // 特征函数的权重参数列表
   std::fill(alpha.begin(), alpha.end(), 0.0);
-  feature_index.set_alpha(&alpha[0]);
+  feature_index.set_alpha(&alpha[0]);  // 把特征函数的权重全部设置成 0
 
   std::cout << "Number of sentences: " << x.size() << std::endl;
   std::cout << "Number of features:  " << feature_index.size() << std::endl;
@@ -391,14 +407,18 @@ bool Encoder::learn(const char *templfile,
 
   progress_timer pg;
 
-  switch (algorithm) {
+	// 现在：
+	// x: 句子集合
+	// feature_index: 整体的所有特征函数都收集在这里
+	// alpha : 特征函数的权重列表
+  switch (algorithm) {  // 这是真正的执行单元，根据不同的参数，执行CRF核心
     case MIRA:
       if (!runMIRA(x, &feature_index, &alpha[0],
                    maxitr, C, eta, shrinking_size, thread_num)) {
         WHAT_ERROR("MIRA execute error");
       }
       break;
-    case CRF_L2:
+    case CRF_L2:  // 以此为例
       if (!runCRF(x, &feature_index, &alpha[0],
                   maxitr, C, eta, shrinking_size, thread_num, false)) {
         WHAT_ERROR("CRF_L2 execute error");
@@ -428,16 +448,20 @@ bool Encoder::learn(const char *templfile,
 
 namespace {
 const CRFPP::Option long_options[] = {  // 可配置的输入参数列表
+  // 特征最低频次
   {"freq",     'f', "1",      "INT",
    "use features that occuer no less than INT(default 1)" },
+  // 最大迭代次数
   {"maxiter" , 'm', "100000", "INT",
    "set INT for max iterations in LBFGS routine(default 10k)" },
-  {"cost",     'c', "1.0",    "FLOAT",
+  {"cost",     'c', "1.0",    "FLOAT",  // 表示拟合的程度，可以用来调节过拟合的质量
    "set FLOAT for cost parameter(default 1.0)" },
+  // 收敛阈值
   {"eta",      'e', "0.0001", "FLOAT",
    "set FLOAT for termination criterion(default 0.0001)" },
   {"convert",  'C',  0,       0, // 压缩model成二进制文件
    "convert text model to binary model" },
+  // 是否输出文本形式的模型文件
   {"textmodel", 't', 0,       0,
    "build also text model file for debugging" },
   // 训练算法
@@ -453,6 +477,7 @@ const CRFPP::Option long_options[] = {  // 可配置的输入参数列表
 };
 
 int crfpp_learn(const Param &param) {
+    // 解析参数，然后调用 实际的CRF算法
   if (!param.help_version()) {
     return 0;
   }
@@ -479,6 +504,7 @@ int crfpp_learn(const Param &param) {
 
   CRFPP::toLower(&salgo);
 
+    //根据参数选择训练算法
   int algorithm = CRFPP::Encoder::MIRA;
   if (salgo == "crf" || salgo == "crf-l2") {
     algorithm = CRFPP::Encoder::CRF_L2;
@@ -492,15 +518,18 @@ int crfpp_learn(const Param &param) {
   }
 
   CRFPP::Encoder encoder;
-  if (convert) {
+  if (convert) {  // 现在不支持压缩,命令行选中这个参数就会报错
     if (!encoder.convert(rest[0].c_str(), rest[1].c_str())) {
       std::cerr << encoder.what() << std::endl;
       return -1;
     }
   } else {
-    if (!encoder.learn(rest[0].c_str(),
-                       rest[1].c_str(),
-                       rest[2].c_str(),
+      // 执行真正的而训练过程
+      // 各种参数转成字符串
+    if (!encoder.learn(rest[0].c_str(),  // 模板文件
+                       rest[1].c_str(),  // 训练语料
+                       rest[2].c_str(),  // 模型的输出文件
+                       // 下面是命令的控制参数
                        textmodel,
                        maxiter, freq, eta, C, thread, shrinking_size,
                        algorithm)) {
@@ -521,6 +550,7 @@ int crfpp_learn2(const char *argv) {
 }
 
 int crfpp_learn(int argc, char **argv) {
+  std::cout << "开始运行crfpp_learn!!!" << std::endl; // 这是我添加的第一行程序
   CRFPP::Param param; //运行参数
   param.open(argc, argv, CRFPP::long_options); // 命令行的参数解析
   return CRFPP::crfpp_learn(param);

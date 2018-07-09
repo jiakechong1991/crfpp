@@ -1,1 +1,13 @@
+.idea/*
 *.o
+*.lo
+*.la
+*.cmake
+cmake-build-debug/*
+example/*
+.libs/crf_learn
+.libs/crf_test
+.libs/libcrfpp.0.dylib
+.libs/libcrfpp.a
+.libs/libcrfpp.dylib
+.libs/libcrfpp.lai

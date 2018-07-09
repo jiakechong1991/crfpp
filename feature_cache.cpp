@@ -11,6 +11,7 @@
 namespace CRFPP {
 
 void FeatureCache::add(const std::vector<int> &f) {
+  // 把 特征函数ID vector 拷贝到feature_freelist_ 中
   int *p = feature_freelist_.alloc(f.size() + 1);
   std::copy(f.begin(), f.end(), p);
   p[f.size()] = -1;   // sentinel

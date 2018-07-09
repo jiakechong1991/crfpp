@@ -27,7 +27,7 @@ class Encoder {
   const char* what() { return what_.str(); }
 
  private:
-  whatlog what_;
+  whatlog what_;  // 一个暂存字符串，用于同一对外输出信息
 };
 }
 #endif

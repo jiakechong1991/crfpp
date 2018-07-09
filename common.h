@@ -26,7 +26,7 @@
 #include "config.h"
 #endif
 
-#define COPYRIGHT  "CRF++: Yet Another CRF Tool Kit\nCopyright (C) "    \
+#define COPYRIGHT  "CRF++: Yet Another CRF Tool Kit\nCopyright (C) 哈哈！！！"    \
   "2005-2013 Taku Kudo, All rights reserved.\n"
 #define MODEL_VERSION 100
 
@@ -107,19 +107,21 @@ inline size_t tokenize(char *str, const char *del,
 template <class Iterator>
 inline size_t tokenize2(char *str, const char *del,
                         Iterator out, size_t max) {
-  char *stre = str + std::strlen(str);
+  // 对输入文件的行: str，进行切分，计算列数,并把该行中的第一个列值，返回给out中
+  char *stre = str + std::strlen(str);  // std::strlen(str)  str的字符串长度
   const char *dele = del + std::strlen(del);
   size_t size = 0;
 
   while (size < max) {
     char *n = std::find_first_of(str, stre, del, dele);
+	  // 它不是使用slipe方式查找，而是查找分隔符的index， 然后计算偏移量
     *n = '\0';
     if (*str != '\0') {
       *out++ = str;
       ++size;
     }
     if (n == stre) break;
-    str = n + 1;
+    str = n + 1; // 移动偏移量
   }
 
   return size;

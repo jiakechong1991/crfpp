@@ -298,8 +298,9 @@ bool TaggerImpl::set_model(const Model &model) {
 }
 
 bool TaggerImpl::add2(size_t size, const char **column, bool copy) {
-  const size_t xsize = feature_index_->xsize();
+  const size_t xsize = feature_index_->xsize();  // 训练文件的列数
 
+	// 对列数 size 进行安全检查
   if ((mode_ == LEARN && size < xsize + 1) ||
       ((mode_ == TEST || mode_ == TEST_SHARED)  && size < xsize)) {
     CHECK_FALSE(false) << "# x is small: size="
@@ -307,19 +308,21 @@ bool TaggerImpl::add2(size_t size, const char **column, bool copy) {
   }
 
   size_t s = x_.size() + 1;
-  x_.resize(s);
+	// 统一列表长度
+	x_.resize(s);
   node_.resize(s);
   answer_.resize(s);
   result_.resize(s);
   s = x_.size() - 1;
 
-  if (copy) {
+  if (copy) {  // 是否拷贝
     for (size_t k = 0; k < size; ++k) {
       x_[s].push_back(allocator_->strdup(column[k]));
     }
   } else {
     for (size_t k = 0; k < size; ++k) {
-      x_[s].push_back(column[k]);
+	    // std::cout << "这是什么：" << column[k] << std::endl;
+      x_[s].push_back(column[k]);  // 这一步，把训练文件的这一行，拆分后插入了列表
     }
   }
 
@@ -346,33 +349,39 @@ bool TaggerImpl::add(size_t size, const char **column) {
 }
 
 bool TaggerImpl::add(const char* line) {
-  char *p = allocator_->strdup(line);
-  scoped_fixed_array<const char *, 8192> column;
+  char *p = allocator_->strdup(line);  // 复制这个字符串
+  scoped_fixed_array<const char *, 8192> column;  // 这里面存储的是改行的待分词字符
+  //计算这一行的列数 size，并把p中的第一列的值，返回给column.get()中:这正是待分词的文本字符
   const size_t size = tokenize2(p, "\t ", column.get(), column.size());
-  if (!add2(size, column.get(), false)) {
+  // std::cout << "这个column[0]是：" << column[0] << std::endl;
+  if (!add2(size, column.get(), false)) {  // false:是否拷贝
     return false;
   }
   return true;
 }
 
 bool TaggerImpl::read(std::istream *is) {
+	// 读train.data中的一句话：用空格分隔的多行单字就是一句话
   scoped_fixed_array<char, 8192> line;
   clear();
 
-  for (;;) {
+  for (;;) { // 无限循环
     if (!is->getline(line.get(), line.size())) {
+	    // 最后一行，文件结束，直接退出
       is->clear(std::ios::eofbit|std::ios::badbit);
       return true;
     }
+    // std::cout <<  "lind[0]" << line[0] << std::endl;
+	  // 如果本行的第一个字符是如下(代表一句话读完了)，就退出
     if (line[0] == '\0' || line[0] == ' ' || line[0] == '\t') {
       break;
     }
-    if (!add(line.get())) {
+    if (!add(line.get())) {  // 逐行的读取训练文件
       return false;
     }
   }
 
-  return true;
+  return true;  //一句话完整读完，而退出
 }
 
 void TaggerImpl::set_penalty(size_t i, size_t j, double penalty) {
@@ -390,7 +399,8 @@ double TaggerImpl::penalty(size_t i, size_t j) const {
 }
 
 bool TaggerImpl::shrink() {
-  CHECK_FALSE(feature_index_->buildFeatures(this))
+  // 借助模板形成大量的特征函数
+  CHECK_FALSE(feature_index_->buildFeatures(this))  // this 调用着自身的实例
       << feature_index_->what();
   std::vector<std::vector<const char *> >(x_).swap(x_);
   std::vector<std::vector<Node *> >(node_).swap(node_);
@@ -455,7 +465,10 @@ bool TaggerImpl::next() {
 }
 
 int TaggerImpl::eval() {
+	// 比较预测和真实标记的准确情况  (针对每个句子而言)
+	// 返回本句子所有行中预测错误的个数
   int err = 0;
+	// 逐个比较 一个句子中的每个行([the, DT, B]) 的预测准确情况
   for (size_t i = 0; i < x_.size(); ++i) {
     if (answer_[i] != result_[i]) {
       ++err;
@@ -477,24 +490,31 @@ bool TaggerImpl::clear() {
 }
 
 void TaggerImpl::buildLattice() {
+	// 构建篱笆图，然后计算nide/path的代价
   if (x_.empty()) {
     return;
   }
 
-  feature_index_->rebuildFeatures(this);
+  feature_index_->rebuildFeatures(this);  // 构建这个句子的篱笆图
 
   for (size_t i = 0; i < x_.size(); ++i) {
     for (size_t j = 0; j < ysize_; ++j) {
-      feature_index_->calcCost(node_[i][j]);
+
+	    // 计算 状态特征函数(点)  的代价
+	    feature_index_->calcCost(node_[i][j]);
+
+
+	    // 获取这个节点(x,y)的 左连接边 列表
       const std::vector<Path *> &lpath = node_[i][j]->lpath;
       for (const_Path_iterator it = lpath.begin(); it != lpath.end(); ++it) {
-        feature_index_->calcCost(*it);
+	      // 计算 转移特征函数(边) 的代价
+	      feature_index_->calcCost(*it);  // 逐个计算其左连接边的代价
       }
     }
   }
 
   // Add penalty for Dual decomposition.
-  if (!penalty_.empty()) {
+  if (!penalty_.empty()) {  // 如果罚项不为空，就为每个节点增加代价
     for (size_t i = 0; i < x_.size(); ++i) {
       for (size_t j = 0; j < ysize_; ++j) {
         node_[i][j]->cost += penalty_[i][j];
@@ -507,19 +527,20 @@ void TaggerImpl::forwardbackward() {
   if (x_.empty()) {
     return;
   }
-
+	// 计算节点alpha
   for (int i = 0; i < static_cast<int>(x_.size()); ++i) {
     for (size_t j = 0; j < ysize_; ++j) {
       node_[i][j]->calcAlpha();
     }
   }
-
+	//计算节点bata
   for (int i = static_cast<int>(x_.size() - 1); i >= 0;  --i) {
     for (size_t j = 0; j < ysize_; ++j) {
       node_[i][j]->calcBeta();
     }
   }
 
+	// 计算Z(x)
   Z_ = 0.0;
   for (size_t j = 0; j < ysize_; ++j) {
     Z_ = logsumexp(Z_, node_[0][j]->beta, j == 0);
@@ -529,6 +550,7 @@ void TaggerImpl::forwardbackward() {
 }
 
 void TaggerImpl::viterbi() {
+	// viterbi算法
   for (size_t i = 0;   i < x_.size(); ++i) {
     for (size_t j = 0; j < ysize_; ++j) {
       double bestc = -1e37;
@@ -558,25 +580,27 @@ void TaggerImpl::viterbi() {
   }
 
   for (Node *n = best; n; n = n->prev) {
-    result_[n->x] = n->y;
+    result_[n->x] = n->y;  // 把viterbi预测的结果队列提取保存出来
   }
 
   cost_ = -node_[x_.size()-1][result_[x_.size()-1]]->bestCost;
 }
 
 double TaggerImpl::gradient(double *expected) {
-  if (x_.empty()) return 0.0;
+  if (x_.empty()) return 0.0;  // 这是一个空句子,直接返回
 
-  buildLattice();
-  forwardbackward();
+  buildLattice();  // 构建篱笆图，然后计算node、path的罚项代价
+  forwardbackward();  // 前向后向算法:计算节点的alpha,beat和Z(x)
   double s = 0.0;
 
+  //  下面利用前后向算法的结果 计算 P(y|x)
   for (size_t i = 0;   i < x_.size(); ++i) {
     for (size_t j = 0; j < ysize_; ++j) {
       node_[i][j]->calcExpectation(expected, Z_, ysize_);
     }
   }
 
+	// 计算梯度
   for (size_t i = 0;   i < x_.size(); ++i) {
     for (const int *f = node_[i][answer_[i]]->fvector; *f != -1; ++f) {
       --expected[*f + answer_[i]];

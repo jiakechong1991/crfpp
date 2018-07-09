@@ -14,7 +14,7 @@
 
 namespace CRFPP {
 
-class FeatureCache: public std::vector <int *> {
+class FeatureCache: public std::vector <int *> {  // 特征函数的类表示
  public:
   void clear() {
     std::vector<int *>::clear();
@@ -28,7 +28,8 @@ class FeatureCache: public std::vector <int *> {
   virtual ~FeatureCache() {}
 
  private:
-  FreeList<int> feature_freelist_;
+  FreeList<int> feature_freelist_;  // 存储的是： 本tagger中的 某个字 用到的特征函数ID
+		// 你要知道，一个句子中有多个字，每个字对应一个feature_freelist_(一对特征函数)
 };
 }
 #endif

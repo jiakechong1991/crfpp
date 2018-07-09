@@ -15,7 +15,7 @@ namespace CRFPP {
 
 template<class T> class scoped_ptr {
  private:
-  T * ptr_;
+  T * ptr_;  // T元素类型的 数组
   scoped_ptr(scoped_ptr const &);
   scoped_ptr & operator=(scoped_ptr const &);
   typedef scoped_ptr<T> this_type;
@@ -35,7 +35,7 @@ template<class T> class scoped_ptr {
 
 template<class T, int N> class scoped_fixed_array {
  private:
-  T * ptr_;
+  T * ptr_;  // 这其实是一个数组，数组元素是T类型
   size_t size_;
   scoped_fixed_array(scoped_fixed_array const &);
   scoped_fixed_array & operator= (scoped_fixed_array const &);
@@ -44,13 +44,16 @@ template<class T, int N> class scoped_fixed_array {
  public:
   typedef T element_type;
   explicit scoped_fixed_array()
+  // 这个构造函数会使用  N 来初始化 size_
+  // ptr_(new T[N])  这是对应长度的一个数组，元素是 T类型
       : ptr_(new T[N]), size_(N) {}
   virtual ~scoped_fixed_array() { delete [] ptr_; }
   size_t size() const { return size_; }
+  // 下面是运算符的重载
   T & operator*() const   { return *ptr_; }
   T * operator->() const  { return ptr_;  }
   T * get() const         { return ptr_;  }
-  T & operator[](size_t i) const   { return ptr_[i]; }
+  T & operator[](size_t i) const   { return ptr_[i]; }  // 取数组的指定index元素
 };
 
 template<class T> class scoped_array {
