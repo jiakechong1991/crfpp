@@ -1,4 +1,8 @@
 .idea/*
+Makefile
+config.log
+config.status
+libtool
 *.o
 *.lo
 *.la
